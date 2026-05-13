@@ -17,12 +17,28 @@ TEXT_SERVICE_URL = os.getenv("TEXT_SERVICE_URL", "http://text-service:8000/analy
 SIGHTENGINE_API_USER = os.getenv("SIGHTENGINE_API_USER")
 SIGHTENGINE_API_KEY = os.getenv("SIGHTENGINE_API_KEY")
 
+MAX_VIDEO_DURATION_SECONDS = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "60"))
+MAX_VIDEO_SIZE_MB = int(os.getenv("MAX_VIDEO_SIZE_MB", "50"))
+
+app.config["MAX_CONTENT_LENGTH"] = MAX_VIDEO_SIZE_MB * 1024 * 1024
+
 OCR_FRAME_INTERVAL_SEC = float(os.getenv("OCR_FRAME_INTERVAL_SEC", "1"))
 OCR_MAX_UNIQUE_TEXTS = int(os.getenv("OCR_MAX_UNIQUE_TEXTS", "20"))
 OCR_SIMILARITY_THRESHOLD = float(os.getenv("OCR_SIMILARITY_THRESHOLD", "0.90"))
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+def get_video_duration_seconds(video_path):
+    if not os.path.exists(video_path):
+        raise Exception(f"File not found: {video_path}")
+
+    clip = VideoFileClip(video_path)
+    try:
+        duration = float(clip.duration or 0)
+    finally:
+        clip.close()
+
+    return duration
 
 def convert_to_mp3(video_path):
     if not os.path.exists(video_path):
@@ -341,10 +357,18 @@ def health():
     })
 
 
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({
+        "error": "File is too large",
+        "max_size_mb": MAX_VIDEO_SIZE_MB
+    }), 413
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     if "file" not in request.files:
-        return jsonify({"error": "No video uploaded"}), 400
+            return jsonify({"error": "No video uploaded"}), 400
 
     file = request.files["file"]
 
@@ -360,6 +384,17 @@ def analyze():
 
     try:
         file.save(video_path)
+
+        duration = get_video_duration_seconds(video_path)
+
+        if duration > MAX_VIDEO_DURATION_SECONDS:
+            return jsonify({
+                "error": "Video is too long",
+                "max_duration_seconds": MAX_VIDEO_DURATION_SECONDS,
+                "actual_duration_seconds": round(duration, 2)
+            }), 413
+
+        sight_error = None
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             audio_future = executor.submit(process_audio_analysis, video_path)

@@ -67,6 +67,8 @@ services:
       TEXT_SERVICE_URL: http://text-service:8000/analyze
       SIGHTENGINE_API_USER: ${SIGHTENGINE_API_USER}
       SIGHTENGINE_API_KEY: ${SIGHTENGINE_API_KEY}
+      MAX_VIDEO_DURATION_SECONDS: 60
+      MAX_VIDEO_SIZE_MB: 50
     volumes:
       - video_tmp:/tmp/video_uploads
     depends_on:

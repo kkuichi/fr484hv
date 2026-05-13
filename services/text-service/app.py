@@ -32,13 +32,73 @@ def forward_func(embeds, attention_mask):
 
 ig = IntegratedGradients(forward_func)
 
-def explain_ig(text: str, target_label: int = 1, max_tokens: int = 8):
-    inputs = tokenizer(text, return_tensors="pt", truncation=True)
+MAX_CHUNK_TOKENS = 450
+
+
+def split_text_into_chunks(text: str, max_tokens: int = MAX_CHUNK_TOKENS):
+    encoded = tokenizer(
+        text,
+        add_special_tokens=False,
+        truncation=False
+    )
+
+    input_ids = encoded["input_ids"]
+    chunks = []
+
+    for i in range(0, len(input_ids), max_tokens):
+        chunk_ids = input_ids[i:i + max_tokens]
+
+        chunk_text = tokenizer.decode(
+            chunk_ids,
+            skip_special_tokens=True
+        ).strip()
+
+        if chunk_text:
+            chunks.append(chunk_text)
+
+    return chunks
+
+def get_top_hf_result(hf_result):
+    if isinstance(hf_result, list):
+        first = hf_result[0]
+
+        if isinstance(first, list):
+            predictions = first
+        else:
+            predictions = hf_result
+    else:
+        predictions = []
+
+    predictions = [
+        p for p in predictions
+        if isinstance(p, dict) and "score" in p
+    ]
+
+    if not predictions:
+        return {
+            "label": "unknown",
+            "score": 0.0
+        }
+
+    top = max(predictions, key=lambda x: float(x.get("score", 0.0)))
+
+    return {
+        "label": str(top.get("label", "unknown")).lower(),
+        "score": float(top.get("score", 0.0))
+    }
+
+def explain_ig(text: str, target_label: int = 1):
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=512
+    )
+
     input_ids = inputs["input_ids"]
     attention_mask = inputs["attention_mask"]
 
     embeddings = model.bert.embeddings.word_embeddings(input_ids)
-
     baseline = torch.zeros_like(embeddings)
 
     attributions = ig.attribute(
@@ -60,7 +120,7 @@ def explain_ig(text: str, target_label: int = 1, max_tokens: int = 8):
         if token in tokenizer.all_special_tokens:
             continue
 
-        score = float(score)
+        score = float(score.detach().cpu())
 
         if token.startswith("##"):
             current_word += token[2:]
@@ -71,6 +131,7 @@ def explain_ig(text: str, target_label: int = 1, max_tokens: int = 8):
                     "token": current_word,
                     "weight": round(current_score, 4)
                 })
+
             current_word = token
             current_score = score
 
@@ -80,7 +141,10 @@ def explain_ig(text: str, target_label: int = 1, max_tokens: int = 8):
             "weight": round(current_score, 4)
         })
 
-    words = [w for w in words if w["weight"] > 0]
+    words = [
+        w for w in words
+        if w["weight"] > 0
+    ]
 
     if not words:
         return []
@@ -89,10 +153,11 @@ def explain_ig(text: str, target_label: int = 1, max_tokens: int = 8):
 
     total_weight = sum(w["weight"] for w in words)
 
-    for w in words:
-        w["percent"] = round((w["weight"] / total_weight) * 100, 2)
+    if total_weight > 0:
+        for w in words:
+            w["percent"] = round((w["weight"] / total_weight) * 100, 2)
 
-    return words[:max_tokens]
+    return words
 
 
 @app.get("/health")
@@ -107,46 +172,87 @@ def analyze(req: AnalyzeRequest):
     if not HF_TOKEN:
         raise HTTPException(status_code=500, detail="HF_TOKEN not set")
 
+    text = req.text.strip()
+
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is empty")
+
     headers = {
         "Authorization": f"Bearer {HF_TOKEN}",
         "Content-Type": "application/json",
     }
 
-    payload = {"inputs": req.text}
+    chunks = split_text_into_chunks(text)
 
-    try:
-        r = requests.post(HF_URL, headers=headers, json=payload, timeout=15)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    if not chunks:
+        raise HTTPException(status_code=400, detail="Text is empty after tokenization")
 
-    if r.status_code != 200:
-        raise HTTPException(status_code=502, detail=r.text)
+    best_label = "unknown"
+    best_confidence = 0.0
+    all_toxic_keywords = []
 
-    hf_result = r.json()
-    first = hf_result[0]
-    top = first[0] if isinstance(first, list) else first
+    for chunk in chunks:
+        payload = {
+            "inputs": chunk
+        }
 
-    label = top.get("label", "unknown")
-    confidence = float(top.get("score", 0.0))
-
-    toxic_keywords = []
-
-    if label == "toxic" and confidence >= 0.6:
         try:
-            toxic_keywords = explain_ig(req.text)
-        except Exception:
-            toxic_keywords = []
+            r = requests.post(HF_URL, headers=headers, json=payload)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
 
-    confidence_percent = round(confidence * 100, 2)
+        if r.status_code != 200:
+            raise HTTPException(status_code=502, detail=r.text)
+
+        hf_result = r.json()
+        top = get_top_hf_result(hf_result)
+
+        chunk_label = top["label"]
+        chunk_confidence = top["score"]
+
+        if chunk_confidence > best_confidence:
+            best_confidence = chunk_confidence
+            best_label = chunk_label
+
+        if chunk_confidence >= 0.6:
+            try:
+                chunk_keywords = explain_ig(chunk)
+                all_toxic_keywords.extend(chunk_keywords)
+            except Exception:
+                pass
+
+    all_toxic_keywords = [
+        keyword for keyword in all_toxic_keywords
+        if keyword.get("weight", 0) > 0
+    ]
+
+    all_toxic_keywords.sort(
+        key=lambda x: x.get("weight", 0),
+        reverse=True
+    )
+
+    total_weight = sum(
+        keyword.get("weight", 0)
+        for keyword in all_toxic_keywords
+    )
+
+    if total_weight > 0:
+        for keyword in all_toxic_keywords:
+            keyword["percent"] = round(
+                (keyword["weight"] / total_weight) * 100,
+                2
+            )
+
+    confidence_percent = round(best_confidence * 100, 2)
 
     return {
         "service": "text-service",
         "status": "ok",
         "model": HF_MODEL,
         "data": {
-            "label": label,
+            "label": best_label,
             "confidence": confidence_percent,
-            "toxic_keywords": toxic_keywords
+            "toxic_keywords": all_toxic_keywords
         },
         "latency_ms": int((time.time() - start) * 1000)
     }

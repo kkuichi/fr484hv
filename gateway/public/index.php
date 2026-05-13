@@ -6,6 +6,9 @@ header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Max-Age: 86400');
 
+set_time_limit(0);
+ini_set('max_execution_time', '0');
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
@@ -63,7 +66,7 @@ if ($path === '/api/v1/audio/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => ['file' => $cfile],
-        CURLOPT_TIMEOUT => 120
+        CURLOPT_TIMEOUT => 0
     ]);
 
     $audioResponse = curl_exec($ch);
@@ -96,7 +99,7 @@ if ($path === '/api/v1/audio/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_POSTFIELDS => $payload,
-        CURLOPT_TIMEOUT => 30
+        CURLOPT_TIMEOUT => 0
     ]);
 
     $textResponse = curl_exec($ch);
@@ -191,7 +194,7 @@ if ($path === '/api/v1/text/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         CURLOPT_POST => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
         CURLOPT_POSTFIELDS => $body,
-        CURLOPT_TIMEOUT => 15,
+        CURLOPT_TIMEOUT => 0,
     ]);
 
     $response = curl_exec($ch);
@@ -245,7 +248,7 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => ['file' => $cfile],
-            CURLOPT_TIMEOUT => 60
+            CURLOPT_TIMEOUT => 0
         ]);
     }
 
@@ -271,7 +274,7 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $rawBody,
-            CURLOPT_TIMEOUT => 60
+            CURLOPT_TIMEOUT => 0
         ]);
     }
 
@@ -341,7 +344,7 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_TIMEOUT => 30
+            CURLOPT_TIMEOUT => 0
         ]);
 
         $textResponse = curl_exec($ch);
@@ -422,7 +425,7 @@ if ($path === '/api/v1/video/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => ['file' => $cfile],
-        CURLOPT_TIMEOUT => 300
+        CURLOPT_TIMEOUT => 0
     ]);
 
     $videoResponse = curl_exec($ch);
@@ -490,7 +493,7 @@ if ($path === '/api/v1/video/status' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 60
+        CURLOPT_TIMEOUT => 0
     ]);
 
     $response = curl_exec($ch);
