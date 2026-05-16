@@ -1,7 +1,6 @@
 <?php
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: https://clarimod.vercel.app');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Max-Age: 86400');
@@ -289,7 +288,27 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
     }
 
     $imageData = json_decode($imageResponse, true);
+
+    if (!is_array($imageData)) {
+        http_response_code(502);
+
+        echo json_encode([
+            "status" => "error",
+            "error" => "Invalid image-service response",
+            "raw" => $imageResponse
+        ]);
+
+        exit;
+    }
+
+    $ocrStatus = $imageData['status'] ?? 'error';
+    $ocrTextFound = $imageData['text_found'] ?? false;
     $extractedText = trim($imageData['text'] ?? '');
+
+    $shouldModerateOcrText =
+        $ocrStatus === 'ok'
+        && $ocrTextFound === true
+        && $extractedText !== '';
 
     $sightResponse = null;
 
@@ -333,7 +352,7 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
 
     $textModeration = null;
 
-    if ($extractedText !== '') {
+    if ($shouldModerateOcrText) {
 
         $textUrl = getenv('TEXT_SERVICE_URL') ?: 'http://text-service:8000/analyze';
         $payload = json_encode(["text" => $extractedText], JSON_UNESCAPED_UNICODE);
@@ -353,19 +372,47 @@ if ($path === '/api/v1/image/analyze' && $_SERVER['REQUEST_METHOD'] === 'POST') 
         $textModeration = json_decode($textResponse, true);
     }
 
+    $ocrOutput = [
+        "status" => $ocrStatus
+    ];
+
+    if ($ocrStatus === 'ok') {
+        $ocrOutput["text_found"] = $ocrTextFound;
+        $ocrOutput["text"] = $extractedText;
+
+        if (!$ocrTextFound) {
+            $ocrOutput["message"] =
+                $imageData["message"]
+                ?? "Text was not found on this image.";
+        }
+    } else {
+        $ocrOutput["type"] =
+            $imageData["type"] ?? "ocr_error";
+
+        $ocrOutput["message"] =
+            $imageData["message"]
+            ?? $imageData["error"]
+            ?? "OCR failed.";
+
+        if (isset($imageData["sizeBytes"])) {
+            $ocrOutput["sizeBytes"] = $imageData["sizeBytes"];
+        }
+
+        if (isset($imageData["details"])) {
+            $ocrOutput["details"] = $imageData["details"];
+        }
+    }
+
+    if (isset($imageData["compression"])) {
+        $ocrOutput["compression"] = $imageData["compression"];
+    }
+
     $finalData = json_encode([
         "status" => "ok",
-        "ocr" => [
-            "status" => "ok",
-            "text" => $extractedText !== ''
-                ? $extractedText
-                : "Text was not found on this image"
-        ],
+        "ocr" => $ocrOutput,
         "moderation" => $textModeration,
         "sightengine" => $sightResponse
-    ]);
-
-    $redis->setex($cacheKey, $ttl, $finalData);
+    ], JSON_UNESCAPED_UNICODE);
 
     echo $finalData;
     exit;

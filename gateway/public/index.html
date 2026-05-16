@@ -835,15 +835,11 @@ submitImage.onclick = async () => {
     }
 
     let textScore = 0;
-    let textLabelRaw = null;
 
     if (hasRealText && moderationData) {
-      const c = Number(moderationData.confidence ?? 0);
-      textScore = c <= 1 ? (c * 100) : c;
-      textLabelRaw = (moderationData.label ?? "").toLowerCase();
+      textScore = Number(moderationData.confidence ?? 0);
     } else {
       textScore = 0;
-      textLabelRaw = "none";
     }
 
     let visualScore = 0;
