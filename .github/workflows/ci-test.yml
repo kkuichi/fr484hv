@@ -1,12 +1,17 @@
-name: CI - Test
+name: CI - Build Docker Images
 
 on:
   push:
-    branches: [ test ]
+    branches:
+      - test
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.actor }}/${{ github.event.repository.name }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
       packages: write
@@ -25,16 +30,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push gateway
+      - name: Build and push gateway
         uses: docker/build-push-action@v5
         with:
           context: ./gateway
           push: true
-          tags: ghcr.io/${{ github.actor }}/${{ github.event.repository.name }}/gateway:test
+          tags: ${{ env.IMAGE_PREFIX }}/gateway:test
 
-      - name: Build & push text-service
+      - name: Build and push text-service
         uses: docker/build-push-action@v5
         with:
           context: ./services/text-service
           push: true
-          tags: ghcr.io/${{ github.actor }}/${{ github.event.repository.name }}/text-service:test
+          tags: ${{ env.IMAGE_PREFIX }}/text-service:test
+
+      - name: Build and push image-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/image-service
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/image-service:test
+
+      - name: Build and push audio-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/audio-service
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/audio-service:test
+
+      - name: Build and push video-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/video-service
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/video-service:test
