@@ -14,7 +14,6 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 HF_MODEL = "unitary/toxic-bert"
 HF_URL = f"https://router.huggingface.co/hf-inference/models/{HF_MODEL}"
 
-
 class AnalyzeRequest(BaseModel):
     text: str
 
@@ -214,7 +213,7 @@ def analyze(req: AnalyzeRequest):
             best_confidence = chunk_confidence
             best_label = chunk_label
 
-        if chunk_confidence >= 0.6:
+        if chunk_confidence >= 0.7:
             try:
                 chunk_keywords = explain_ig(chunk)
                 all_toxic_keywords.extend(chunk_keywords)
