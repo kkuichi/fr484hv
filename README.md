@@ -88,4 +88,4 @@ when changes are pushed to the `test` branch.
 
 ## Author
 
-Fylyp Redkin © 2025
+Fylyp Redkin © 2026
